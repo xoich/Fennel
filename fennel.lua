@@ -35,16 +35,38 @@ local function deref(self) return self[1] end
 local SYMBOL_MT = { 'SYMBOL', __tostring = deref }
 local EXPR_MT = { 'EXPR', __tostring = deref }
 local VARARG = setmetatable({ '...' }, { 'VARARG', __tostring = deref })
+
+local isTable
+local function tableToString(tbl)
+  local kvs = {}
+  for k, v in pairs(tbl) do
+      local kstr = type(k) == 'string' and ':' .. k
+        or isTable(k) and tableToString(k) or tostring(k)
+      local vstr = type(v) == 'string' and '"' .. v .. '"'
+        or isTable(v) and tableToString(v) or tostring(v)
+      table.insert(kvs, kstr .. ' ' .. vstr)
+  end
+  return '{' .. table.concat(kvs, ' ') .. '}'
+end
+
 local LIST_MT = { 'LIST',
     __tostring = function (self)
         local strs = {}
         for _, s in ipairs(self) do
-            table.insert(strs, tostring(s))
+            table.insert(strs, isTable(s) and tableToString(s) or tostring(s))
         end
         return '(' .. table.concat(strs, ' ', 1, #self) .. ')'
     end
 }
-local SEQUENCE_MT = { 'SEQUENCE' }
+local SEQUENCE_MT = { 'SEQUENCE',
+    __tostring = function (self)
+      local strs = {}
+      for _, s in ipairs(self) do
+        table.insert(strs, isTable(s) and tableToString(s) or tostring(s))
+      end
+      return '[' .. table.concat(strs, ' ', 1, #self) .. ']'
+    end
+}
 
 -- Load code with an environment in all recent Lua versions
 local function loadCode(code, environment, filename)
@@ -109,7 +131,7 @@ local function isSym(x)
 end
 
 -- Checks if an object any kind of table, EXCEPT list or symbol
-local function isTable(x)
+isTable = function(x)
     return type(x) == 'table' and
         x ~= VARARG and
         getmetatable(x) ~= LIST_MT and getmetatable(x) ~= SYMBOL_MT and x
@@ -448,6 +470,9 @@ local function makeScope(parent)
         }),
         includes = setmetatable({}, {
             __index = parent and parent.includes
+        }),
+        macros = setmetatable({}, {
+            __index = parent and parent.macros
         }),
         autogensyms = {},
         parent = parent,
@@ -2522,6 +2547,7 @@ end
 local function addMacros(macros, ast, scope)
     assertCompile(isTable(macros), 'expected macros to be table', ast)
     for k, v in pairs(macros) do
+        scope.macros[k] = v
         scope.specials[k] = macroToSpecial(v)
     end
 end
@@ -2756,6 +2782,10 @@ that argument name begins with ?."
           (assert (sym? name) "expected symbol for macro name")
           (local args [...])
           `(macros { ,(tostring name) (fn ,name ,(unpack args))}))
+ :macroexpand-1 (fn macroexpand-1 [expr] "If operator in expr is a macro/special, expand it"
+                  (let [scope (get-scope) op-sym (and (list? expr) (. expr 1))
+                        op (and (sym? op-sym) (. scope :macros (tostring op-sym)))]
+                    (print (tostring (if op (op (select 2 (unpack expr))) expr)))))
  :match
 (fn match [val ...]
   "Perform pattern matching on val. See reference for details."
