@@ -5,9 +5,11 @@ jobs:
       - image: debian:buster-slim
     steps:
       - checkout
-      - run: apt-get update -qq && apt-get install -qq cloc make lua-check luajit lua5.1 lua5.2 lua5.3
+      - run: apt-get update -qq && apt-get install -qq cloc make lua-check luajit lua5.1 lua5.2 lua5.3 netcat
       - run: make ci
       - irc/notify:
           server: 'irc.freenode.net'
           channel: '#fennel'
 
+orbs:
+  irc: circleci/irc@0.1.0
